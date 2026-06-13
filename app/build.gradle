@@ -2,9 +2,23 @@ plugins {
     alias(libs.plugins.androidApplication)
 }
 
+def secretsProperties = new java.util.Properties()
+def secretsPropertiesFile = rootProject.file("secrets.properties")
+if (secretsPropertiesFile.exists()) {
+    secretsPropertiesFile.withInputStream { secretsProperties.load(it) }
+}
+
+def buildConfigString = { value ->
+    "\"${(value ?: "").replace("\\", "\\\\").replace("\"", "\\\"")}\""
+}
+
 android {
     namespace 'com.wayne.learnchinese'
     compileSdk 34
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         applicationId "com.wayne.learnchinese"
@@ -14,6 +28,8 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "String", "JUHE_XHZD_API_KEY",
+                buildConfigString(secretsProperties.getProperty("juhe.xhzd.apiKey", ""))
     }
 
     buildTypes {
