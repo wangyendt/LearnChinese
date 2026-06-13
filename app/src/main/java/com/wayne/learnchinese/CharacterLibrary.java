@@ -25,9 +25,9 @@ import java.util.Set;
 
 public class CharacterLibrary {
     private static final String TAG = "CharacterLibrary";
-    private static final String PREF_NAME = "character_library";
-    private static final String EXTRA_CHARS_KEY = "extra_characters";
-    private static final String MARKED_CHARS_KEY = "marked_characters";
+    public static final String PREF_NAME = "character_library";
+    public static final String EXTRA_CHARS_KEY = "extra_characters";
+    public static final String MARKED_CHARS_KEY = "marked_characters";
     private List<String> characters;
     private Set<String> markedCharacters;
     private SharedPreferences preferences;
@@ -205,4 +205,4 @@ public class CharacterLibrary {
         }
         return false;
     }
-} 
+}
