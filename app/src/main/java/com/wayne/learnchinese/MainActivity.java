@@ -2,16 +2,23 @@ package com.wayne.learnchinese;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.InputType;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -24,6 +31,8 @@ import com.google.android.material.button.MaterialButton;
 
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
@@ -33,8 +42,13 @@ public class MainActivity extends AppCompatActivity {
     private TextView libraryStatsText;
     private TextInputEditText searchInput;
     private FloatingActionButton toggleMarkButton;
+    private MaterialButton lookupDictionaryButton;
+    private MaterialButton uploadConfigButton;
+    private MaterialButton downloadConfigButton;
     private Random random = new Random();
     private ActivityResultLauncher<Intent> libraryLauncher;
+    private final ExecutorService configSyncExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +65,9 @@ public class MainActivity extends AppCompatActivity {
             FloatingActionButton addButton = findViewById(R.id.addCharacterButton);
             MaterialButton viewLibraryButton = findViewById(R.id.viewLibraryButton);
             MaterialButton randomButton = findViewById(R.id.randomButton);
+            lookupDictionaryButton = findViewById(R.id.lookupDictionaryButton);
+            uploadConfigButton = findViewById(R.id.uploadConfigButton);
+            downloadConfigButton = findViewById(R.id.downloadConfigButton);
             toggleMarkButton = findViewById(R.id.toggleMarkButton);
 
             if (viewLibraryButton == null) {
@@ -108,6 +125,10 @@ public class MainActivity extends AppCompatActivity {
             viewLibraryButton.setOnClickListener(v -> {
                 try {
                     Intent intent = new Intent(this, LibraryViewActivity.class);
+                    String character = characterDisplay.getText().toString();
+                    if (!character.isEmpty() && library.containsCharacter(character)) {
+                        intent.putExtra(LibraryViewActivity.EXTRA_INITIAL_CHARACTER, character);
+                    }
                     libraryLauncher.launch(intent);
                 } catch (Exception e) {
                     Log.e(TAG, "Error starting LibraryViewActivity", e);
@@ -117,6 +138,10 @@ public class MainActivity extends AppCompatActivity {
 
             // 设置随机按钮点击事件
             randomButton.setOnClickListener(v -> showRandomCharacter());
+
+            lookupDictionaryButton.setOnClickListener(v -> lookupCurrentCharacter());
+            uploadConfigButton.setOnClickListener(v -> showUploadConfigDialog());
+            downloadConfigButton.setOnClickListener(v -> showDownloadConfigDialog());
 
             // 设置标记按钮点击事件
             toggleMarkButton.setOnClickListener(v -> {
@@ -152,6 +177,12 @@ public class MainActivity extends AppCompatActivity {
         if (searchInput.length() > 0) {
             updateCharacterDisplay(searchInput.getText().toString());
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        configSyncExecutor.shutdownNow();
     }
 
     private void updateCharacterDisplay(String character) {
@@ -192,6 +223,291 @@ public class MainActivity extends AppCompatActivity {
         int total = library.getCharacterCount();
         int marked = library.getMarkedCharacters().size();
         libraryStatsText.setText(String.format("字库中共有 %d 个汉字，已标记 %d 个", total, marked));
+    }
+
+    private void showUploadConfigDialog() {
+        setSyncButtonsEnabled(false);
+        Toast.makeText(this, "正在读取配置日期", Toast.LENGTH_SHORT).show();
+        configSyncExecutor.execute(() -> {
+            try {
+                String localTime = ConfigSyncManager.getLocalConfigModifiedTime(getApplicationContext());
+                ConfigSyncManager.RemoteConfigInfo remoteInfo =
+                        ConfigSyncManager.fetchRemoteConfigInfoForUpload();
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle("上传配置？")
+                            .setMessage("本地配置：" + localTime
+                                    + "\n云端配置：" + remoteInfo.modifiedTimeText
+                                    + "\n\n上传会覆盖云端配置文件。")
+                            .setPositiveButton("上传覆盖", (dialog, which) -> uploadConfigToCloud())
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading config info before upload", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showErrorDialog("读取配置日期失败", e);
+                });
+            }
+        });
+    }
+
+    private void uploadConfigToCloud() {
+        setSyncButtonsEnabled(false);
+        Toast.makeText(this, "正在上传配置", Toast.LENGTH_SHORT).show();
+        configSyncExecutor.execute(() -> {
+            try {
+                ConfigSyncManager.UploadResult result =
+                        ConfigSyncManager.uploadConfig(getApplicationContext());
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    Toast.makeText(
+                            this,
+                            "上传成功：" + result.byteCount + " 字节",
+                            Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error uploading config", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showErrorDialog("上传配置失败", e);
+                });
+            }
+        });
+    }
+
+    private void showDownloadConfigDialog() {
+        setSyncButtonsEnabled(false);
+        Toast.makeText(this, "正在读取云端配置日期", Toast.LENGTH_SHORT).show();
+        configSyncExecutor.execute(() -> {
+            try {
+                String localTime = ConfigSyncManager.getLocalConfigModifiedTime(getApplicationContext());
+                ConfigSyncManager.RemoteConfigInfo remoteInfo =
+                        ConfigSyncManager.fetchRemoteConfigInfo();
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle("覆盖本地配置？")
+                            .setMessage("本地配置：" + localTime
+                                    + "\n云端配置：" + remoteInfo.modifiedTimeText
+                                    + "\n\n下载会覆盖本机已学习和已标记数据。")
+                            .setPositiveButton("覆盖本地", (dialog, which) -> downloadConfigFromCloud())
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading remote config info", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showErrorDialog("读取云端配置失败", e);
+                });
+            }
+        });
+    }
+
+    private void downloadConfigFromCloud() {
+        setSyncButtonsEnabled(false);
+        Toast.makeText(this, "正在下载配置", Toast.LENGTH_SHORT).show();
+        configSyncExecutor.execute(() -> {
+            try {
+                ConfigSyncManager.DownloadResult result =
+                        ConfigSyncManager.downloadAndApplyConfig(getApplicationContext());
+                mainHandler.post(() -> {
+                    library = new CharacterLibrary(this);
+                    updateLibraryStats();
+                    if (searchInput.length() > 0) {
+                        updateCharacterDisplay(searchInput.getText().toString());
+                    }
+                    setSyncButtonsEnabled(true);
+                    Toast.makeText(
+                            this,
+                            String.format("下载成功：字库 %d 个，已标记 %d 个",
+                                    library.getCharacterCount(),
+                                    result.markedCharacterCount),
+                            Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error downloading config", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showErrorDialog("下载配置失败", e);
+                });
+            }
+        });
+    }
+
+    private void setSyncButtonsEnabled(boolean enabled) {
+        lookupDictionaryButton.setEnabled(enabled);
+        uploadConfigButton.setEnabled(enabled);
+        downloadConfigButton.setEnabled(enabled);
+    }
+
+    private void lookupCurrentCharacter() {
+        String character = characterDisplay.getText().toString();
+        if (character.length() != 1) {
+            Toast.makeText(this, "请先输入或选择一个汉字", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (DictionaryLookupManager.getSavedApiKey(this).isEmpty()) {
+            showDictionaryApiKeyDialog(character);
+            return;
+        }
+        queryDictionary(character);
+    }
+
+    private void showDictionaryApiKeyDialog(String character) {
+        TextInputEditText input = new TextInputEditText(this);
+        input.setHint("请输入聚合数据 API Key");
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        String savedKey = DictionaryLookupManager.getSavedApiKey(this);
+        if (!savedKey.isEmpty()) {
+            input.setText(savedKey);
+            input.setSelection(savedKey.length());
+        }
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setTitle("设置字典 API Key")
+                .setMessage("新华字典接口需要聚合数据 key。Key 会保存在本机应用私有配置中。")
+                .setView(createPaddedContainer(input))
+                .setPositiveButton("保存并查询", null)
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    String apiKey = input.getText() == null ? "" : input.getText().toString().trim();
+                    if (apiKey.isEmpty()) {
+                        input.setError("请输入 API Key");
+                        return;
+                    }
+                    DictionaryLookupManager.saveApiKey(this, apiKey);
+                    dialog.dismiss();
+                    queryDictionary(character);
+                }));
+        dialog.show();
+    }
+
+    private void queryDictionary(String character) {
+        setSyncButtonsEnabled(false);
+        Toast.makeText(this, "正在查询字典", Toast.LENGTH_SHORT).show();
+        configSyncExecutor.execute(() -> {
+            try {
+                DictionaryLookupManager.DictionaryEntry entry =
+                        DictionaryLookupManager.query(getApplicationContext(), character);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showDictionaryResultDialog(entry);
+                });
+            } catch (DictionaryLookupManager.MissingApiKeyException e) {
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showDictionaryApiKeyDialog(character);
+                });
+            } catch (DictionaryLookupManager.DictionaryApiException e) {
+                Log.e(TAG, "Dictionary API error", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showDictionaryApiErrorDialog(character, e);
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error querying dictionary", e);
+                mainHandler.post(() -> {
+                    setSyncButtonsEnabled(true);
+                    showErrorDialog("查询字典失败", e);
+                });
+            }
+        });
+    }
+
+    private void showDictionaryApiErrorDialog(
+            String character,
+            DictionaryLookupManager.DictionaryApiException exception) {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("查询字典失败")
+                .setMessage("错误码：" + exception.errorCode + "\n" + exception.getMessage())
+                .setPositiveButton("修改Key", (dialog, which) -> showDictionaryApiKeyDialog(character))
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private void showDictionaryResultDialog(DictionaryLookupManager.DictionaryEntry entry) {
+        TextView content = new TextView(this);
+        content.setText(buildDictionaryContent(entry));
+        content.setTextSize(17);
+        content.setLineSpacing(0, 1.18f);
+        content.setTextColor(getResources().getColor(android.R.color.black));
+
+        ScrollView scrollView = new ScrollView(this);
+        int padding = (int) (18 * getResources().getDisplayMetrics().density);
+        scrollView.setPadding(padding, 0, padding, 0);
+        scrollView.addView(content, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("字典：" + safe(entry.zi))
+                .setView(scrollView)
+                .setPositiveButton("关闭", null)
+                .show();
+    }
+
+    private String buildDictionaryContent(DictionaryLookupManager.DictionaryEntry entry) {
+        StringBuilder builder = new StringBuilder();
+        appendLine(builder, "拼音", entry.py);
+        appendLine(builder, "读音", entry.pinyin);
+        appendLine(builder, "五笔", entry.wubi);
+        appendLine(builder, "部首", entry.bushou);
+        appendLine(builder, "笔画", entry.bihua);
+        appendSection(builder, "简解", entry.simpleExplanations);
+        appendSection(builder, "详解", entry.detailedExplanations);
+        return builder.toString().trim();
+    }
+
+    private void appendLine(StringBuilder builder, String label, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        builder.append(label).append("：").append(value).append("\n");
+    }
+
+    private void appendSection(StringBuilder builder, String title, List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        builder.append("\n").append(title).append("\n");
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) {
+                builder.append(value).append("\n");
+            }
+        }
+    }
+
+    private View createPaddedContainer(View child) {
+        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(padding, 0, padding, 0);
+        container.addView(child, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        return container;
+    }
+
+    private String safe(String value) {
+        return value == null || value.isEmpty() ? "未知" : value;
+    }
+
+    private void showErrorDialog(String title, Exception exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isEmpty()) {
+            message = "请检查网络或云端链接权限";
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("确定", null)
+                .show();
     }
 
     private void showAddCharacterDialog() {
