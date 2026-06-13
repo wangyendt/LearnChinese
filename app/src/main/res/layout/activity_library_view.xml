@@ -9,25 +9,24 @@
         android:id="@+id/headerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
+        android:orientation="vertical"
         app:layout_constraintTop_toTopOf="parent">
 
         <TextView
             android:id="@+id/statsText"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:textSize="16sp"
             android:textColor="@android:color/darker_gray"/>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/toggleBatchModeButton"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="52dp"
             android:text="批量标记"
-            android:textSize="14sp"
-            android:layout_marginStart="16dp"/>
+            android:textSize="16sp"/>
     </LinearLayout>
 
     <GridView
@@ -53,23 +52,37 @@
             android:id="@+id/batchActionContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:gravity="center"
             android:padding="8dp"
             android:visibility="gone">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/markSelectedButton"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="52dp"
                 android:text="标记选中"
-                android:layout_marginEnd="8dp"/>
+                android:textSize="16sp"/>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/unmarkSelectedButton"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="取消标记"/>
+                android:layout_marginTop="8dp"
+                android:minHeight="52dp"
+                android:text="取消标记"
+                android:textSize="16sp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/deleteSelectedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="52dp"
+                android:text="删除选中"
+                android:textSize="16sp"
+                android:backgroundTint="@android:color/holo_red_dark"/>
 
         </LinearLayout>
 
@@ -77,6 +90,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="56dp">
+
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/scrollToTopButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="8dp"
+                android:src="@android:drawable/arrow_up_float"
+                android:contentDescription="跳转到顶部"/>
 
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/scrollToBottomButton"
@@ -91,4 +113,4 @@
 
     </LinearLayout>
 
-</androidx.constraintlayout.widget.ConstraintLayout> 
+</androidx.constraintlayout.widget.ConstraintLayout>
